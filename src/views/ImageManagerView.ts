@@ -2,7 +2,7 @@
  * 图片管理器视图 - 使用经典的 Obsidian ItemView
  */
 
-import { ItemView, Menu, Notice, setIcon, WorkspaceLeaf } from "obsidian";
+import { ItemView, Menu, Notice, setIcon, WorkspaceLeaf, TFile } from "obsidian";
 import {
 	ImageItem,
 	ImageManagerSettings,
@@ -115,6 +115,20 @@ export class ImageManagerView extends ItemView {
 		this.setupLayout();
 		await Promise.resolve();
 		this.loadImages();
+// --- 测试：监听活跃视图变化 ---
+		this.registerDomEvent(document, "click", (event: MouseEvent) => {
+    const target = event.target as HTMLElement;
+    const folder = target.closest(".nav-folder-title");
+    if (!folder) return;
+
+    const folderPath = folder.getAttribute("data-path");
+    if (!folderPath) return;
+
+    // 更新筛选器并刷新图片网格
+    this.selectedFolder = folderPath;
+    void this.refresh();
+});
+	
 	}
 
 	onClose(): Promise<void> {
@@ -470,6 +484,7 @@ export class ImageManagerView extends ItemView {
 	}
 
 	private createImageController(image: ImageItem): ManagerImageController {
+			
 		let controller: ManagerImageController;
 		const { element, imageEl } = createImageManagerCard(
 			this.app,
@@ -487,6 +502,78 @@ export class ImageManagerView extends ItemView {
 				onDelete: () => void this.handleDelete(controller.item),
 			},
 		);
+
+ // --- 新增：右键菜单 ---
+    element.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const menu = new Menu();
+
+		menu.addItem((item) => {
+    item.setTitle("按此文件夹筛选")
+        .setIcon("filter")
+        .onClick(() => {
+            // 取出这张图片所在的文件夹路径
+            const folderPath = image.path.substring(0, image.path.lastIndexOf("/"));
+            this.selectedFolder = folderPath;
+            void this.refresh();
+        });
+});
+
+        menu.addItem((item) => {
+            item.setTitle("在系统资源管理器中显示")
+                .setIcon("folder-open")
+                .onClick(() => {
+                    this.app.showInFolder(image.path);
+                });
+        });
+
+		menu.addItem((item) => {
+			item.setTitle("在文件列表中显示")
+				.setIcon("file-explorer")
+				.onClick(() => {
+					const file = this.app.vault.getAbstractFileByPath(image.path);
+					if (file instanceof TFile) {
+						// 在后台打开，不抢占当前视图
+						const leaf = this.app.workspace.getLeaf(true);
+						leaf.openFile(file, { active: false });
+						
+						// 然后执行定位命令
+						setTimeout(() => {
+							this.app.commands.executeCommandById("file-explorer:reveal-active-file");
+						}, 50);
+					}
+				});
+		});
+
+        menu.addItem((item) => {
+            item.setTitle("预览")
+                .setIcon("eye")
+                .onClick(() => this.handlePreview(image));
+        });
+
+        menu.addItem((item) => {
+            item.setTitle("重命名")
+                .setIcon("pencil")
+                .onClick(() => this.handleRename(image));
+        });
+
+        menu.addItem((item) => {
+            item.setTitle("移动")
+                .setIcon("folder")
+                .onClick(() => this.handleMove(image));
+        });
+
+        menu.addItem((item) => {
+            item.setTitle("删除")
+                .setIcon("trash")
+                .onClick(() => void this.handleDelete(image));
+        });
+
+        menu.showAtMouseEvent(event);
+    });
+    // --- 新增结束 ---
+
 		controller = {
 			element,
 			item: image,
